@@ -34,6 +34,7 @@ import {
   MouseMoveEvent,
   MouseUpEvent,
 } from "./InputHandler";
+import { QuickChatClickConsumedEvent } from "./graphics/layers/QuickChatButton";
 import { endGame, startGame, startTime } from "./LocalPersistantStats";
 import { getPersistentID } from "./Main";
 import { terrainMapFileLoader } from "./TerrainMapFileLoader";
@@ -201,6 +202,7 @@ export class ClientGameRunner {
 
   private lastMessageTime: number = 0;
   private connectionCheckInterval: NodeJS.Timeout | null = null;
+  private quickChatConsumedClick = false;
 
   constructor(
     private lobby: LobbyConfig,
@@ -259,6 +261,9 @@ export class ClientGameRunner {
     this.eventBus.on(MouseUpEvent, this.inputEvent.bind(this));
     this.eventBus.on(MouseMoveEvent, this.onMouseMove.bind(this));
     this.eventBus.on(AutoUpgradeEvent, this.autoUpgradeEvent.bind(this));
+    this.eventBus.on(QuickChatClickConsumedEvent, () => {
+      this.quickChatConsumedClick = true;
+    });
     this.eventBus.on(
       DoBoatAttackEvent,
       this.doBoatAttackUnderCursor.bind(this),
@@ -389,6 +394,10 @@ export class ClientGameRunner {
     if (!this.isActive || this.renderer.uiState.ghostStructure !== null) {
       return;
     }
+    
+    // Reset flag at start of processing
+    this.quickChatConsumedClick = false;
+    
     const cell = this.renderer.transformHandler.screenToWorldCoordinates(
       event.x,
       event.y,
@@ -396,6 +405,12 @@ export class ClientGameRunner {
     if (!this.gameView.isValidCoord(cell.x, cell.y)) {
       return;
     }
+    
+    // Check if quick chat consumed the click before processing
+    if (this.quickChatConsumedClick) {
+      return; // Quick chat handled this click, don't process normally
+    }
+    
     console.log(`clicked cell ${cell}`);
     const tile = this.gameView.ref(cell.x, cell.y);
     if (
@@ -416,6 +431,9 @@ export class ClientGameRunner {
     }
     this.myPlayer.actions(tile).then((actions) => {
       if (this.myPlayer === null) return;
+      if (this.quickChatConsumedClick) {
+        return; // Quick chat handled this click, don't process normally
+      }
       if (actions.canAttack) {
         this.eventBus.emit(
           new SendAttackIntentEvent(
