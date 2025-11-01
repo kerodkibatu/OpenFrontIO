@@ -198,4 +198,45 @@ export class UserSettings {
   setSoundEffectsVolume(volume: number): void {
     this.setFloat("settings.soundEffectsVolume", volume);
   }
+
+  getQuickChatFavorites(): Array<{ category: string; key: string; order: number }> {
+    const value = localStorage.getItem("settings.quickChatFavorites");
+    if (!value) return [];
+    try {
+      return JSON.parse(value);
+    } catch (e) {
+      console.warn("Invalid quick chat favorites JSON:", e);
+      return [];
+    }
+  }
+
+  setQuickChatFavorites(favorites: Array<{ category: string; key: string; order: number }>): void {
+    localStorage.setItem("settings.quickChatFavorites", JSON.stringify(favorites));
+  }
+
+  quickChatButtonVisible(): boolean {
+    return this.get("settings.quickChatButtonVisible", true);
+  }
+
+  setQuickChatButtonVisible(visible: boolean): void {
+    this.set("settings.quickChatButtonVisible", visible);
+  }
+
+  getQuickChatShortcuts(): Record<string, number> {
+    const value = localStorage.getItem("settings.quickChatShortcuts");
+    if (!value) {
+      // Default: keys 1-5 map to favorites 0-4
+      return { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4 };
+    }
+    try {
+      return JSON.parse(value);
+    } catch (e) {
+      console.warn("Invalid quick chat shortcuts JSON:", e);
+      return { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4 };
+    }
+  }
+
+  setQuickChatShortcuts(shortcuts: Record<string, number>): void {
+    localStorage.setItem("settings.quickChatShortcuts", JSON.stringify(shortcuts));
+  }
 }

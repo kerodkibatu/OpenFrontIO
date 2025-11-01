@@ -2,6 +2,7 @@ import { LitElement, html } from "lit";
 import { customElement, query, state } from "lit/decorators.js";
 import { translateText } from "../client/Utils";
 import { UserSettings } from "../core/game/UserSettings";
+import { quickChatPhrases, QuickChatPhrase } from "./graphics/layers/ChatModal";
 import "./components/baseComponents/setting/SettingKeybind";
 import { SettingKeybind } from "./components/baseComponents/setting/SettingKeybind";
 import "./components/baseComponents/setting/SettingNumber";
@@ -12,12 +13,16 @@ import "./components/baseComponents/setting/SettingToggle";
 export class UserSettingModal extends LitElement {
   private userSettings: UserSettings = new UserSettings();
 
-  @state() private settingsMode: "basic" | "keybinds" = "basic";
+  @state() private settingsMode: "basic" | "keybinds" | "favorites" = "basic";
   @state() private keybinds: Record<string, { value: string; key: string }> =
     {};
 
   @state() private keySequence: string[] = [];
   @state() private showEasterEggSettings = false;
+  @state() private favorites: Array<{ category: string; key: string; order: number }> = [];
+  @state() private draggedFavoriteIndex: number | null = null;
+  @state() private lastRemovedFavorite: { category: string; key: string; order: number } | null = null;
+  @state() private undoTimeout: ReturnType<typeof setTimeout> | null = null;
 
   connectedCallback() {
     super.connectedCallback();
@@ -31,6 +36,8 @@ export class UserSettingModal extends LitElement {
         console.warn("Invalid keybinds JSON:", e);
       }
     }
+
+    this.favorites = this.userSettings.getQuickChatFavorites();
   }
 
   @query("o-modal") private modalEl!: HTMLElement & {
@@ -206,6 +213,14 @@ export class UserSettingModal extends LitElement {
     this.userSettings.set("settings.performanceOverlay", enabled);
   }
 
+  private toggleQuickChatButton(e: CustomEvent<{ checked: boolean }>) {
+    const enabled = e.detail?.checked;
+    if (typeof enabled !== "boolean") return;
+
+    this.userSettings.setQuickChatButtonVisible(enabled);
+    console.log("💬 Quick Chat Button:", enabled ? "ON" : "OFF");
+  }
+
   private handleKeybindChange(
     e: CustomEvent<{ action: string; value: string; key: string }>,
   ) {
@@ -241,7 +256,7 @@ export class UserSettingModal extends LitElement {
           <div class="modal-content user-setting-modal">
             <div class="flex mb-4 w-full justify-center">
               <button
-                class="w-1/2 text-center px-3 py-1 rounded-l 
+                class="w-1/3 text-center px-2 py-1 rounded-l 
       ${this.settingsMode === "basic"
                   ? "bg-white/10 text-white"
                   : "bg-transparent text-gray-400"}"
@@ -250,7 +265,7 @@ export class UserSettingModal extends LitElement {
                 ${translateText("user_setting.tab_basic")}
               </button>
               <button
-                class="w-1/2 text-center px-3 py-1 rounded-r 
+                class="w-1/3 text-center px-2 py-1 rounded-none border-x border-gray-600
       ${this.settingsMode === "keybinds"
                   ? "bg-white/10 text-white"
                   : "bg-transparent text-gray-400"}"
@@ -258,12 +273,23 @@ export class UserSettingModal extends LitElement {
               >
                 ${translateText("user_setting.tab_keybinds")}
               </button>
+              <button
+                class="w-1/3 text-center px-2 py-1 rounded-r 
+      ${this.settingsMode === "favorites"
+                  ? "bg-white/10 text-white"
+                  : "bg-transparent text-gray-400"}"
+                @click=${() => (this.settingsMode = "favorites")}
+              >
+                ${translateText("user_setting.tab_favorites")}
+              </button>
             </div>
 
             <div class="settings-list">
               ${this.settingsMode === "basic"
                 ? this.renderBasicSettings()
-                : this.renderKeybindSettings()}
+                : this.settingsMode === "keybinds"
+                  ? this.renderKeybindSettings()
+                  : this.renderFavoritesSettings()}
             </div>
           </div>
         </div>
@@ -362,6 +388,15 @@ export class UserSettingModal extends LitElement {
         id="performance-overlay-toggle"
         .checked=${this.userSettings.performanceOverlay()}
         @change=${this.togglePerformanceOverlay}
+      ></setting-toggle>
+
+      <!-- 💬 Quick Chat Button -->
+      <setting-toggle
+        label="${translateText("user_setting.quick_chat_button_label")}"
+        description="${translateText("user_setting.quick_chat_button_desc")}"
+        id="quick-chat-button-toggle"
+        .checked=${this.userSettings.quickChatButtonVisible()}
+        @change=${this.toggleQuickChatButton}
       ></setting-toggle>
 
       <!-- ⚔️ Attack Ratio -->
@@ -655,4 +690,301 @@ export class UserSettingModal extends LitElement {
   public close() {
     this.modalEl?.close();
   }
+
+  private renderFavoritesSettings() {
+    const sortedFavorites = [...this.favorites].sort((a, b) => a.order - b.order);
+    const maxFavorites = 5;
+
+    return html`
+      <style>
+        .favorites-container {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+        .favorites-list {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+          min-height: 200px;
+          padding: 1rem;
+          background: rgba(0, 0, 0, 0.2);
+          border-radius: 0.5rem;
+        }
+        .favorite-item {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.75rem;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 0.25rem;
+          cursor: move;
+          transition: background 0.2s;
+        }
+        .favorite-item:hover {
+          background: rgba(255, 255, 255, 0.15);
+        }
+        .favorite-item.dragging {
+          opacity: 0.5;
+        }
+        .favorite-item .drag-handle {
+          cursor: grab;
+          user-select: none;
+        }
+        .favorite-item .drag-handle:active {
+          cursor: grabbing;
+        }
+        .favorite-item .remove-btn {
+          margin-left: auto;
+          padding: 0.25rem 0.5rem;
+          background: rgba(239, 68, 68, 0.7);
+          border: none;
+          border-radius: 0.25rem;
+          color: white;
+          cursor: pointer;
+        }
+        .favorite-item .remove-btn:hover {
+          background: rgba(239, 68, 68, 0.9);
+        }
+        .message-selector {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+          gap: 0.5rem;
+          max-height: 300px;
+          overflow-y: auto;
+          padding: 1rem;
+          background: rgba(0, 0, 0, 0.2);
+          border-radius: 0.5rem;
+        }
+        .message-button {
+          padding: 0.5rem;
+          background: rgba(255, 255, 255, 0.1);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          border-radius: 0.25rem;
+          color: white;
+          cursor: pointer;
+          text-align: left;
+          transition: background 0.2s;
+        }
+        .message-button:hover {
+          background: rgba(255, 255, 255, 0.2);
+        }
+        .message-button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .undo-notification {
+          position: fixed;
+          bottom: 2rem;
+          left: 50%;
+          transform: translateX(-50%);
+          padding: 0.75rem 1.5rem;
+          background: rgba(34, 197, 94, 0.9);
+          color: white;
+          border-radius: 0.5rem;
+          z-index: 10000;
+          display: flex;
+          gap: 1rem;
+          align-items: center;
+        }
+        .undo-notification button {
+          padding: 0.25rem 0.75rem;
+          background: white;
+          color: rgba(34, 197, 94, 1);
+          border: none;
+          border-radius: 0.25rem;
+          cursor: pointer;
+          font-weight: bold;
+        }
+      </style>
+
+      <div class="favorites-container">
+        <div class="text-white text-base font-semibold mb-2">
+          ${translateText("user_setting.favorites_title")} (${sortedFavorites.length}/${maxFavorites})
+        </div>
+
+        <div class="favorites-list">
+          ${sortedFavorites.length === 0
+            ? html`<div class="text-gray-400 text-center py-4">
+                ${translateText("user_setting.favorites_empty")}
+              </div>`
+            : sortedFavorites.map(
+                (fav, index) => html`
+                  <div
+                    class="favorite-item ${this.draggedFavoriteIndex === index ? "dragging" : ""}"
+                    draggable="true"
+                    @dragstart=${(e: DragEvent) => this.handleDragStart(e, index)}
+                    @dragover=${(e: DragEvent) => this.handleDragOver(e)}
+                    @drop=${(e: DragEvent) => this.handleDrop(e, index)}
+                    @dragend=${() => (this.draggedFavoriteIndex = null)}
+                  >
+                    <span class="drag-handle">⋮⋮</span>
+                    <span>${index + 1}.</span>
+                    <span>${translateText(`chat.${fav.category}.${fav.key}`)}</span>
+                    <span class="text-gray-400 text-sm">(${translateText(`chat.cat.${fav.category}`)})</span>
+                    <button
+                      class="remove-btn"
+                      @click=${() => this.removeFavorite(index)}
+                    >
+                      ${translateText("user_setting.remove")}
+                    </button>
+                  </div>
+                `,
+              )}
+        </div>
+
+        ${sortedFavorites.length < maxFavorites
+          ? html`
+              <div class="text-white text-base font-semibold mb-2">
+                ${translateText("user_setting.add_favorite")}
+              </div>
+              <div class="message-selector">
+                ${Object.entries(quickChatPhrases).map(([category, phrases]) =>
+                  phrases.map((phrase: QuickChatPhrase) => {
+                    const isFavorite = sortedFavorites.some(
+                      (f) => f.category === category && f.key === phrase.key,
+                    );
+                    return html`
+                      <button
+                        class="message-button"
+                        ?disabled=${isFavorite}
+                        @click=${() => this.addFavorite(category, phrase.key)}
+                      >
+                        ${translateText(`chat.${category}.${phrase.key}`)}
+                        <div class="text-xs text-gray-400 mt-1">
+                          ${translateText(`chat.cat.${category}`)}
+                        </div>
+                      </button>
+                    `;
+                  }),
+                )}
+              </div>
+            `
+          : html`<div class="text-gray-400 text-center py-2">
+              ${translateText("user_setting.favorites_max")}
+            </div>`}
+
+        ${this.lastRemovedFavorite && this.undoTimeout
+          ? html`
+              <div class="undo-notification">
+                <span>${translateText("user_setting.favorite_removed")}</span>
+                <button @click=${this.undoRemoveFavorite}>
+                  ${translateText("user_setting.undo")}
+                </button>
+              </div>
+            `
+          : null}
+      </div>
+    `;
+  }
+
+  private handleDragStart(e: DragEvent, index: number) {
+    this.draggedFavoriteIndex = index;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", index.toString());
+    }
+  }
+
+  private handleDragOver(e: DragEvent) {
+    e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = "move";
+    }
+  }
+
+  private handleDrop(e: DragEvent, targetIndex: number) {
+    e.preventDefault();
+    if (this.draggedFavoriteIndex === null) return;
+
+    const draggedIndex = this.draggedFavoriteIndex;
+    if (draggedIndex === targetIndex) return;
+
+    const sortedFavorites = [...this.favorites].sort((a, b) => a.order - b.order);
+    const draggedItem = sortedFavorites[draggedIndex];
+    const targetItem = sortedFavorites[targetIndex];
+
+    if (!draggedItem || !targetItem) return;
+
+    // Swap orders
+    const tempOrder = draggedItem.order;
+    draggedItem.order = targetItem.order;
+    targetItem.order = tempOrder;
+
+    // Update favorites array
+    this.favorites = this.favorites.map((f) => {
+      if (f.category === draggedItem.category && f.key === draggedItem.key) {
+        return { ...f, order: targetItem.order };
+      }
+      if (f.category === targetItem.category && f.key === targetItem.key) {
+        return { ...f, order: tempOrder };
+      }
+      return f;
+    });
+
+    this.userSettings.setQuickChatFavorites(this.favorites);
+    this.draggedFavoriteIndex = null;
+    this.requestUpdate();
+  }
+
+  private addFavorite(category: string, key: string) {
+    if (this.favorites.length >= 5) return;
+
+    const isDuplicate = this.favorites.some(
+      (f) => f.category === category && f.key === key,
+    );
+    if (isDuplicate) return;
+
+    const newFavorite = {
+      category,
+      key,
+      order: this.favorites.length,
+    };
+
+    this.favorites = [...this.favorites, newFavorite];
+    this.userSettings.setQuickChatFavorites(this.favorites);
+  }
+
+  private removeFavorite(index: number) {
+    const sortedFavorites = [...this.favorites].sort((a, b) => a.order - b.order);
+    const favoriteToRemove = sortedFavorites[index];
+
+    if (this.undoTimeout) {
+      clearTimeout(this.undoTimeout);
+    }
+
+    this.lastRemovedFavorite = favoriteToRemove;
+    this.favorites = this.favorites.filter(
+      (f) => !(f.category === favoriteToRemove.category && f.key === favoriteToRemove.key),
+    );
+
+    // Reorder remaining favorites
+    this.favorites = this.favorites.map((f, i) => ({ ...f, order: i }));
+    this.userSettings.setQuickChatFavorites(this.favorites);
+
+    // Set undo timeout (5 seconds)
+    this.undoTimeout = setTimeout(() => {
+      this.lastRemovedFavorite = null;
+      this.undoTimeout = null;
+      this.requestUpdate();
+    }, 5000);
+
+    this.requestUpdate();
+  }
+
+  private undoRemoveFavorite = () => {
+    if (!this.lastRemovedFavorite) return;
+
+    this.favorites = [...this.favorites, this.lastRemovedFavorite];
+    this.favorites = this.favorites.map((f, i) => ({ ...f, order: i }));
+    this.userSettings.setQuickChatFavorites(this.favorites);
+
+    if (this.undoTimeout) {
+      clearTimeout(this.undoTimeout);
+      this.undoTimeout = null;
+    }
+
+    this.lastRemovedFavorite = null;
+    this.requestUpdate();
+  };
 }

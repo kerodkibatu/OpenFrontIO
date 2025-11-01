@@ -310,6 +310,7 @@
     "title": "User Settings",
     "tab_basic": "Basic Settings",
     "tab_keybinds": "Keybinds",
+    "tab_favorites": "Quick Chat Favorites",
     "dark_mode_label": "Dark Mode",
     "dark_mode_desc": "Toggle the site’s appearance between light and dark themes",
     "emojis_label": "Emojis",
@@ -396,7 +397,23 @@
     "exit_game_label": "Exit Game",
     "exit_game_info": "Return to main menu",
     "background_music_volume": "Background Music Volume",
-    "sound_effects_volume": "Sound Effects Volume"
+    "sound_effects_volume": "Sound Effects Volume",
+    "favorites_title": "Quick Chat Favorites",
+    "favorites_empty": "No favorites selected. Add messages below to create quick chat shortcuts.",
+    "favorites_max": "Maximum of 5 favorites reached. Remove one to add another.",
+    "add_favorite": "Add Favorite Message",
+    "remove": "Remove",
+    "favorite_removed": "Favorite removed",
+    "undo": "Undo",
+    "quick_chat_button_label": "Quick Chat Button",
+    "quick_chat_button_desc": "Show/hide the quick chat button in-game for faster message sending"
+  },
+  "quick_chat": {
+    "button_title": "Quick Chat",
+    "select_recipient": "Click on a player to send message",
+    "select_target": "Click on a player to select target",
+    "cancel": "Press ESC to cancel",
+    "no_favorites": "No favorites set. Configure in Settings > Quick Chat Favorites"
   },
   "chat": {
     "title": "Quick Chat",

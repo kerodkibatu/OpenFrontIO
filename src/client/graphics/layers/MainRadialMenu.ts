@@ -4,6 +4,7 @@ import { EventBus } from "../../../core/EventBus";
 import { PlayerActions } from "../../../core/game/Game";
 import { TileRef } from "../../../core/game/GameMap";
 import { GameView, PlayerView } from "../../../core/game/GameView";
+import { SendQuickChatEvent } from "../../Transport";
 import { TransformHandler } from "../TransformHandler";
 import { UIState } from "../UIState";
 import { BuildMenu } from "./BuildMenu";
@@ -16,6 +17,7 @@ import { RadialMenu, RadialMenuConfig } from "./RadialMenu";
 import {
   centerButtonElement,
   COLORS,
+  MenuElement,
   MenuElementParams,
   rootMenuElement,
 } from "./RadialMenuElements";
@@ -100,6 +102,7 @@ export class MainRadialMenu extends LitElement implements Layer {
     });
   }
 
+
   private async updatePlayerActions(
     myPlayer: PlayerView,
     actions: PlayerActions,
@@ -140,18 +143,19 @@ export class MainRadialMenu extends LitElement implements Layer {
   }
 
   async tick() {
-    if (!this.radialMenu.isMenuVisible() || this.clickedTile === null) return;
-    if (this.game.ticks() % 5 === 0) {
-      this.game
-        .myPlayer()!
-        .actions(this.clickedTile)
-        .then((actions) => {
-          this.updatePlayerActions(
-            this.game.myPlayer()!,
-            actions,
-            this.clickedTile!,
-          );
-        });
+    if (this.radialMenu.isMenuVisible() && this.clickedTile !== null) {
+      if (this.game.ticks() % 5 === 0) {
+        this.game
+          .myPlayer()!
+          .actions(this.clickedTile)
+          .then((actions) => {
+            this.updatePlayerActions(
+              this.game.myPlayer()!,
+              actions,
+              this.clickedTile!,
+            );
+          });
+      }
     }
   }
 

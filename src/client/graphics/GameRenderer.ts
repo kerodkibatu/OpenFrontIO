@@ -10,6 +10,7 @@ import { AlertFrame } from "./layers/AlertFrame";
 import { BuildMenu } from "./layers/BuildMenu";
 import { ChatDisplay } from "./layers/ChatDisplay";
 import { ChatModal } from "./layers/ChatModal";
+import { QuickChatButton } from "./layers/QuickChatButton";
 import { ControlPanel } from "./layers/ControlPanel";
 import { EmojiTable } from "./layers/EmojiTable";
 import { EventsDisplay } from "./layers/EventsDisplay";
@@ -229,6 +230,20 @@ export function createRenderer(
   spawnTimer.game = game;
   spawnTimer.transformHandler = transformHandler;
 
+  const quickChatButton = document.querySelector(
+    "quick-chat-button",
+  ) as QuickChatButton;
+  if (!(quickChatButton instanceof QuickChatButton)) {
+    console.error("quick chat button not found");
+  } else {
+    quickChatButton.game = game;
+    quickChatButton.eventBus = eventBus;
+    quickChatButton.userSettings = userSettings;
+    quickChatButton.transformHandler = transformHandler;
+    // Initialize the button
+    quickChatButton.init();
+  }
+
   // When updating these layers please be mindful of the order.
   // Try to group layers by the return value of shouldTransform.
   // Not grouping the layers may cause excessive calls to context.save() and context.restore().
@@ -272,6 +287,7 @@ export function createRenderer(
     new AdTimer(game),
     alertFrame,
     fpsDisplay,
+    quickChatButton,
   ];
 
   return new GameRenderer(
